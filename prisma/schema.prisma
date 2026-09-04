@@ -1,0 +1,539 @@
+// Lumina — data model.
+// Provider is SQLite so the project runs with zero infrastructure setup.
+// The schema is deliberately Postgres-portable: no provider-specific attributes,
+// no native enums (status fields are String + TS union types in src/types),
+// no Json columns (JSON payloads are stored as String). To move to PostgreSQL,
+// change `provider` + DATABASE_URL and run `prisma migrate dev` — nothing else.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── identity ───────────────────────────────
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  username     String  @unique
+  name         String
+  passwordHash String?
+  avatarUrl    String?
+  bio          String?
+  verified     Boolean @default(false)
+  role         String  @default("USER") // USER | ADMIN
+
+  statusEmoji String?
+  statusText  String?
+  presence    String   @default("OFFLINE") // ONLINE | AWAY | DND | OFFLINE
+  lastSeenAt  DateTime @default(now())
+
+  locale    String @default("ru")
+  theme     String @default("light") // light | dark | amoled | auto
+  accent    String @default("amber")
+  density   String @default("cozy") // compact | cozy | roomy
+  fontScale Float  @default(1)
+
+  whoCanMessage String  @default("EVERYONE") // EVERYONE | CONTACTS | NOBODY
+  showPresence  Boolean @default(true)
+  showReadState Boolean @default(true)
+
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  e2ePublicKey     String?
+  banned           Boolean @default(false)
+  banReason        String?
+
+  birthday  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  accounts      Account[]
+  devices       Device[]
+  memberships   ChatMember[]
+  messages      Message[]
+  reactions     Reaction[]
+  reads         MessageRead[]
+  saved         SavedMessage[]
+  folders       Folder[]
+  invites       Invite[]
+  pollVotes     PollVote[]
+  stories       Story[]
+  storyViews    StoryView[]
+  notifications Notification[]
+  notes         Note[]
+  badges        Badge[]
+  stickerPacks  StickerPack[]
+  auditLogs     AuditLog[]
+  chatsCreated  Chat[]         @relation("ChatCreator")
+  callsStarted  CallSession[]  @relation("CallStarter")
+  blocking      Block[]        @relation("Blocker")
+  blockedBy     Block[]        @relation("Blocked")
+  reportsMade   Report[]       @relation("Reporter")
+  reportsAbout  Report[]       @relation("ReportedUser")
+  giftsSent     Gift[]         @relation("GiftSender")
+  giftsGot      Gift[]         @relation("GiftReceiver")
+
+  @@index([username])
+  @@index([presence])
+}
+
+/// NextAuth OAuth links (Google, GitHub, Discord, Apple).
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+/// Device / session list the user can inspect and revoke.
+model Device {
+  id           String   @id @default(cuid())
+  userId       String
+  label        String
+  userAgent    String?
+  ip           String?
+  pushEndpoint String?
+  pushKeys     String? // JSON { p256dh, auth }
+  trusted      Boolean  @default(false)
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ──────────────────────────────── chats ────────────────────────────────
+
+model Chat {
+  id          String  @id @default(cuid())
+  type        String // DM | GROUP | CHANNEL
+  title       String?
+  avatarUrl   String?
+  description String?
+  wallpaper   String?
+  slowModeSec Int     @default(0)
+
+  onlyAdminsCanPost Boolean @default(false)
+  e2eEnabled        Boolean @default(false)
+
+  createdById   String?
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  createdBy   User?         @relation("ChatCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  members     ChatMember[]
+  messages    Message[]
+  invites     Invite[]
+  customRoles CustomRole[]
+  calls       CallSession[]
+  gifts       Gift[]
+
+  @@index([lastMessageAt])
+  @@index([type])
+}
+
+model ChatMember {
+  id     String @id @default(cuid())
+  chatId String
+  userId String
+  role   String @default("MEMBER") // OWNER | ADMIN | MODERATOR | MEMBER
+
+  customRoleId String?
+  joinedAt     DateTime @default(now())
+
+  notificationsEnabled Boolean   @default(true)
+  muteUntil            DateTime?
+  isArchived           Boolean   @default(false)
+  isPinned             Boolean   @default(false)
+  folderId             String?
+  draft                String?
+  lastReadAt           DateTime  @default(now())
+  lastReadMessageId    String?
+
+  chat       Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder     Folder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  customRole CustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
+
+  @@unique([chatId, userId])
+  @@index([userId])
+}
+
+/// Group role with a custom permission set (JSON string of Permission[]).
+model CustomRole {
+  id          String @id @default(cuid())
+  chatId      String
+  name        String
+  color       String @default("#f59e0b")
+  permissions String @default("[]")
+
+  chat    Chat         @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  members ChatMember[]
+}
+
+model Folder {
+  id     String @id @default(cuid())
+  userId String
+  name   String
+  icon   String @default("folder")
+  order  Int    @default(0)
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  members ChatMember[]
+
+  @@index([userId])
+}
+
+model Invite {
+  id          String    @id @default(cuid())
+  chatId      String
+  code        String    @unique
+  createdById String
+  expiresAt   DateTime?
+  maxUses     Int?
+  uses        Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  chat      Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────── messages ───────────────────────────────
+
+model Message {
+  id          String  @id @default(cuid())
+  chatId      String
+  senderId    String?
+  content     String  @default("")
+  contentType String  @default("TEXT") // TEXT | CODE | LOCATION | VOICE | FILE | STICKER | SYSTEM | CALL | POLL
+
+  codeLanguage String?
+  lat          Float?
+  lng          Float?
+  locationName String?
+
+  replyToId       String?
+  forwardedFromId String?
+  stickerId       String?
+
+  editedAt      DateTime?
+  deletedAt     DateTime?
+  deletedForAll Boolean   @default(false)
+  isPinned      Boolean   @default(false)
+
+  selfDestructSec Int?
+  expiresAt       DateTime?
+
+  createdAt DateTime @default(now())
+
+  chat          Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender        User?          @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  replyTo       Message?       @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies       Message[]      @relation("Replies")
+  forwardedFrom Message?       @relation("Forwards", fields: [forwardedFromId], references: [id], onDelete: SetNull)
+  forwards      Message[]      @relation("Forwards")
+  sticker       Sticker?       @relation(fields: [stickerId], references: [id], onDelete: SetNull)
+  attachments   Attachment[]
+  reactions     Reaction[]
+  reads         MessageRead[]
+  savedBy       SavedMessage[]
+  poll          Poll?
+  reports       Report[]       @relation("ReportedMessage")
+
+  @@index([chatId, createdAt])
+  @@index([senderId])
+  @@index([expiresAt])
+}
+
+model Attachment {
+  id        String  @id @default(cuid())
+  messageId String
+  kind      String // IMAGE | VIDEO | AUDIO | VOICE | DOC
+  url       String
+  thumbUrl  String?
+  name      String
+  mime      String
+  size      Int
+  width     Int?
+  height    Int?
+  duration  Float?
+  waveform  String? // JSON number[]
+  ocrText   String?
+  blurhash  String?
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+}
+
+model SavedMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+}
+
+model Poll {
+  id        String    @id @default(cuid())
+  messageId String    @unique
+  question  String
+  multiple  Boolean   @default(false)
+  anonymous Boolean   @default(true)
+  closesAt  DateTime?
+
+  message Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  options PollOption[]
+}
+
+model PollOption {
+  id     String @id @default(cuid())
+  pollId String
+  text   String
+  order  Int    @default(0)
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+}
+
+model PollVote {
+  id       String   @id @default(cuid())
+  optionId String
+  userId   String
+  votedAt  DateTime @default(now())
+
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, userId])
+}
+
+// ───────────────────────── stickers, stories, social ─────────────────────────
+
+model StickerPack {
+  id       String  @id @default(cuid())
+  name     String
+  slug     String  @unique
+  coverUrl String?
+  authorId String?
+  isGlobal Boolean @default(false)
+  animated Boolean @default(false)
+
+  author   User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  stickers Sticker[]
+}
+
+model Sticker {
+  id     String  @id @default(cuid())
+  packId String
+  url    String
+  emoji  String  @default("✨")
+  name   String?
+
+  pack     StickerPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  messages Message[]
+}
+
+model Story {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String   @default("IMAGE") // IMAGE | VIDEO
+  mediaUrl  String
+  caption   String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  views StoryView[]
+
+  @@index([userId, expiresAt])
+}
+
+model StoryView {
+  id       String   @id @default(cuid())
+  storyId  String
+  userId   String
+  emoji    String?
+  viewedAt DateTime @default(now())
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])
+}
+
+model Badge {
+  id       String   @id @default(cuid())
+  userId   String
+  key      String // early-bird | chatterbox | night-owl | ...
+  earnedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}
+
+model Gift {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  chatId     String?
+  kind       String // star | cake | rocket | heart
+  message    String?
+  createdAt  DateTime @default(now())
+
+  sender   User  @relation("GiftSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User  @relation("GiftReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  chat     Chat? @relation(fields: [chatId], references: [id], onDelete: SetNull)
+}
+
+/// Personal encrypted space — the server only ever sees ciphertext.
+model Note {
+  id         String   @id @default(cuid())
+  userId     String
+  title      String
+  cipherText String
+  iv         String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ───────────────────────── moderation & platform ─────────────────────────
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+}
+
+model Report {
+  id              String   @id @default(cuid())
+  reporterId      String
+  targetUserId    String?
+  targetMessageId String?
+  reason          String
+  details         String?
+  status          String   @default("OPEN") // OPEN | REVIEWING | RESOLVED | REJECTED
+  createdAt       DateTime @default(now())
+
+  reporter      User     @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetUser    User?    @relation("ReportedUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+  targetMessage Message? @relation("ReportedMessage", fields: [targetMessageId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String // MESSAGE | MENTION | CALL | REACTION | SYSTEM
+  title      String
+  body       String?
+  chatId     String?
+  importance String   @default("NORMAL") // LOW | NORMAL | HIGH
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model CallSession {
+  id           String    @id @default(cuid())
+  chatId       String
+  startedById  String
+  kind         String    @default("AUDIO") // AUDIO | VIDEO
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  participants String    @default("[]") // JSON string[]
+  recordingUrl String?
+
+  chat      Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  startedBy User @relation("CallStarter", fields: [startedById], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  target    String?
+  meta      String? // JSON
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}
+
+model RateLimitRule {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  limit     Int
+  windowSec Int
+  updatedAt DateTime @updatedAt
+}

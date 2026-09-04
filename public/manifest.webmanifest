@@ -1,0 +1,28 @@
+{
+  "name": "Lumina — свет в каждом сообщении",
+  "short_name": "Lumina",
+  "description": "Мессенджер нового поколения: чаты, каналы, звонки и истории в светящемся стекле.",
+  "id": "/app",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#f8fafc",
+  "theme_color": "#f59e0b",
+  "lang": "ru",
+  "dir": "auto",
+  "categories": ["social", "productivity", "communication"],
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Чаты", "url": "/app", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Истории", "url": "/app/stories" },
+    { "name": "Сохранённые", "url": "/app/saved" },
+    { "name": "Настройки", "url": "/app/settings" }
+  ]
+}

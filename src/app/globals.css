@@ -1,0 +1,269 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Clash Display — logo face (Fontshare). Sans/mono come from next/font. */
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@600,700&display=swap');
+
+@layer base {
+  :root {
+    --canvas: 248 250 252;
+    --canvas-2: 226 232 240;
+    --glass: 255 255 255;
+    --glass-strong: 255 255 255;
+    --glass-alpha: 0.7;
+    --glass-strong-alpha: 0.86;
+    --hairline: 255 255 255;
+    --hairline-alpha: 0.6;
+    --ink: 30 41 59;
+    --ink-soft: 71 85 105;
+    --ink-faint: 148 163 184;
+
+    /* accent preset: amber (default) */
+    --accent-from: 245 158 11;
+    --accent-to: 236 72 153;
+    --accent2-from: 20 184 166;
+    --accent2-to: 139 92 246;
+
+    --density-y: 0.625rem;
+    --density-gap: 0.5rem;
+    --radius-bubble: 1.25rem;
+    --font-display: 'Clash Display';
+  }
+
+  [data-theme='dark'] {
+    --canvas: 15 23 42;
+    --canvas-2: 30 41 59;
+    --glass: 30 41 59;
+    --glass-strong: 51 65 85;
+    --glass-alpha: 0.55;
+    --glass-strong-alpha: 0.78;
+    --hairline: 148 163 184;
+    --hairline-alpha: 0.18;
+    --ink: 241 245 249;
+    --ink-soft: 203 213 225;
+    --ink-faint: 148 163 184;
+  }
+
+  [data-theme='amoled'] {
+    --canvas: 0 0 0;
+    --canvas-2: 0 0 0;
+    --glass: 12 12 14;
+    --glass-strong: 22 22 26;
+    --glass-alpha: 0.82;
+    --glass-strong-alpha: 0.95;
+    --hairline: 120 120 130;
+    --hairline-alpha: 0.22;
+    --ink: 244 244 245;
+    --ink-soft: 200 200 208;
+    --ink-faint: 130 130 140;
+  }
+
+  /* 12 accent presets — set via data-accent on <html> */
+  [data-accent='amber']  { --accent-from: 245 158 11; --accent-to: 236 72 153; }
+  [data-accent='rose']   { --accent-from: 244 63 94;  --accent-to: 251 146 60; }
+  [data-accent='teal']   { --accent-from: 20 184 166; --accent-to: 59 130 246; }
+  [data-accent='violet'] { --accent-from: 139 92 246; --accent-to: 236 72 153; }
+  [data-accent='lime']   { --accent-from: 132 204 22; --accent-to: 16 185 129; }
+  [data-accent='sky']    { --accent-from: 56 189 248; --accent-to: 129 140 248; }
+  [data-accent='fuchsia']{ --accent-from: 217 70 239; --accent-to: 99 102 241; }
+  [data-accent='emerald']{ --accent-from: 16 185 129; --accent-to: 132 204 22; }
+  [data-accent='orange'] { --accent-from: 249 115 22; --accent-to: 239 68 68; }
+  [data-accent='indigo'] { --accent-from: 99 102 241; --accent-to: 14 165 233; }
+  [data-accent='pink']   { --accent-from: 236 72 153; --accent-to: 168 85 247; }
+  [data-accent='gold']   { --accent-from: 234 179 8;  --accent-to: 245 158 11; }
+
+  [data-density='compact'] { --density-y: 0.375rem; --density-gap: 0.25rem; }
+  [data-density='cozy']    { --density-y: 0.625rem; --density-gap: 0.5rem; }
+  [data-density='roomy']   { --density-y: 0.9rem;   --density-gap: 0.85rem; }
+
+  html {
+    font-size: calc(16px * var(--font-scale, 1));
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-canvas-gradient text-ink font-sans antialiased;
+    min-height: 100dvh;
+    background-attachment: fixed;
+  }
+
+  /* ambient light blobs behind the glass */
+  body::before,
+  body::after {
+    content: '';
+    position: fixed;
+    inset-inline-start: -10vw;
+    top: -15vh;
+    width: 55vw;
+    height: 55vw;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgb(var(--accent-from) / 0.22), transparent 65%);
+    filter: blur(60px);
+    pointer-events: none;
+    z-index: -1;
+    animation: float 12s ease-in-out infinite;
+  }
+  body::after {
+    inset-inline-start: auto;
+    inset-inline-end: -15vw;
+    top: auto;
+    bottom: -20vh;
+    background: radial-gradient(circle, rgb(var(--accent2-to) / 0.2), transparent 65%);
+    animation-delay: -6s;
+  }
+
+  ::selection { background: rgb(var(--accent-from) / 0.28); }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent-from));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* ── luminous glass surfaces ── */
+  .glass {
+    background: rgb(var(--glass) / var(--glass-alpha));
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: 1px solid rgb(var(--hairline) / var(--hairline-alpha));
+    @apply shadow-glass;
+  }
+  .glass-strong {
+    background: rgb(var(--glass-strong) / var(--glass-strong-alpha));
+    backdrop-filter: blur(40px) saturate(160%);
+    -webkit-backdrop-filter: blur(40px) saturate(160%);
+    border: 1px solid rgb(var(--hairline) / var(--hairline-alpha));
+    @apply shadow-glass-lg;
+  }
+  .glass-hover {
+    @apply transition-all duration-300 ease-lumina;
+  }
+  .glass-hover:hover {
+    box-shadow:
+      0 0 0 1px rgb(var(--accent-from) / 0.3),
+      0 10px 34px -10px rgb(var(--accent-from) / 0.45);
+    transform: translateY(-1px);
+  }
+
+  /* ── text & gradients ── */
+  .text-gradient {
+    @apply bg-accent-gradient bg-clip-text text-transparent;
+    background-size: 200% 200%;
+  }
+  .logo-font {
+    font-family: var(--font-display), 'Clash Display', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  /* ── button with a sweeping light ray on press ── */
+  .btn-ray { position: relative; overflow: hidden; isolation: isolate; }
+  .btn-ray::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.55), transparent);
+    transform: translateX(-120%) skewX(-18deg);
+    opacity: 0;
+  }
+  .btn-ray:active::after { animation: ray-sweep 0.7s cubic-bezier(0.22, 1, 0.36, 1); opacity: 1; }
+
+  /* ── status ring around avatars ── */
+  .status-ring { position: relative; }
+  .status-ring::before {
+    content: '';
+    position: absolute;
+    inset: -2.5px;
+    border-radius: 9999px;
+    background: conic-gradient(from 180deg, rgb(var(--accent-from)), rgb(var(--accent-to)), rgb(var(--accent-from)));
+    z-index: -1;
+  }
+
+  /* ── loading skeleton with a light shimmer ── */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--ink-faint) / 0.12) 25%,
+      rgb(var(--ink-faint) / 0.22) 50%,
+      rgb(var(--ink-faint) / 0.12) 75%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded-lg;
+  }
+
+  /* ── message bubbles ── */
+  .bubble-out {
+    background: linear-gradient(135deg, rgb(var(--accent-from) / 0.92), rgb(var(--accent-to) / 0.92));
+    color: #fff;
+    border-radius: var(--radius-bubble) var(--radius-bubble) 6px var(--radius-bubble);
+    box-shadow: 0 6px 22px -8px rgb(var(--accent-from) / 0.6);
+  }
+  .bubble-in {
+    background: rgb(var(--glass-strong) / var(--glass-strong-alpha));
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgb(var(--hairline) / var(--hairline-alpha));
+    border-radius: var(--radius-bubble) var(--radius-bubble) var(--radius-bubble) 6px;
+  }
+
+  .hairline { border-color: rgb(var(--hairline) / var(--hairline-alpha)); }
+  .press { @apply transition-transform duration-150 active:scale-[0.97]; }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .text-balance { text-wrap: balance; }
+  .grid-chat { grid-template-columns: 320px minmax(0, 1fr); }
+  .grid-chat-wide { grid-template-columns: 320px minmax(0, 1fr) 300px; }
+}
+
+/* ── custom gradient scrollbar ── */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  background-image: linear-gradient(180deg, rgb(var(--accent-from) / 0.55), rgb(var(--accent-to) / 0.55));
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-image: linear-gradient(180deg, rgb(var(--accent-from)), rgb(var(--accent-to)));
+}
+* { scrollbar-color: rgb(var(--accent-from) / 0.5) transparent; scrollbar-width: thin; }
+
+/* ── syntax highlighting (highlight.js tokens, Lumina palette) ── */
+.hljs { color: rgb(var(--ink)); background: transparent; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal { color: rgb(var(--accent-to)); }
+.hljs-string, .hljs-attr { color: #10b981; }
+.hljs-number, .hljs-built_in { color: rgb(var(--accent-from)); }
+.hljs-comment { color: rgb(var(--ink-faint)); font-style: italic; }
+.hljs-title, .hljs-function .hljs-title { color: #8b5cf6; }
+.hljs-tag, .hljs-name { color: #14b8a6; }
+
+@layer utilities {
+  /* Horizontal chip rails and the emoji grid scroll without a visible track. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .wrap-anywhere {
+    overflow-wrap: anywhere;
+  }
+}

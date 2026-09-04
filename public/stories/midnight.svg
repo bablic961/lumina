@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1280" width="720" height="1280">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#1e293b"/><stop offset="1" stop-color="#4c1d95"/></linearGradient>
+    <radialGradient id="bloom"><stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="720" height="1280" fill="url(#g)"/>
+  <circle cx="230" cy="380" r="300" fill="url(#bloom)"/>
+  <circle cx="540" cy="960" r="240" fill="url(#bloom)" opacity="0.7"/>
+</svg>

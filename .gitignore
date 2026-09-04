@@ -1,0 +1,21 @@
+node_modules
+.next
+out
+build
+.env
+.env*.local
+*.db
+*.db-journal
+prisma/dev.db*
+public/uploads/*
+!public/uploads/.gitkeep
+.DS_Store
+npm-debug.log*
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel
+
+# Local logs
+*.log

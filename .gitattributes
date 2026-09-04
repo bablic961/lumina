@@ -1,0 +1,5 @@
+# Keep the repo LF-only so Windows checkouts and Linux builds agree.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.webp binary
