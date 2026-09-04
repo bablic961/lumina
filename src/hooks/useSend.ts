@@ -21,6 +21,9 @@ export interface SendInput {
   selfDestructSec?: number | null;
 }
 
+/** What `/api/upload` returns per file: everything except the database-side fields. */
+type UploadedFile = Omit<AttachmentDTO, 'id' | 'duration' | 'waveform' | 'ocrText'>;
+
 const ERRORS: Record<string, string> = {
   rate_limited: 'Слишком много сообщений — подождите пару секунд',
   not_a_member: 'Вы не участник этого чата',
@@ -38,11 +41,19 @@ export function useSend(chatId: string | null, me: PublicUser | null) {
     useChatStore();
   const typingSentAt = useRef(0);
 
-  const uploadFiles = useCallback(async (files: File[]) => {
+  const uploadFiles = useCallback(async (files: File[]): Promise<AttachmentDTO[]> => {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
-    const { attachments } = await api.post<{ attachments: AttachmentDTO[] }>('/api/upload', form);
-    return attachments;
+    // The route answers with StoredFile rows under `files`; real ids appear only
+    // when the message — and with it the Attachment row — is written.
+    const { files: stored } = await api.post<{ files: UploadedFile[] }>('/api/upload', form);
+    return stored.map((file, index) => ({
+      ...file,
+      id: `up_${Date.now()}_${index}`,
+      duration: null,
+      waveform: null,
+      ocrText: null,
+    }));
   }, []);
 
   const send = useCallback(
@@ -132,11 +143,12 @@ export function useSend(chatId: string | null, me: PublicUser | null) {
             locationName: input.locationName,
             clientId,
           },
-          (res: { ok?: boolean; message?: MessageDTO; error?: string }) => {
+          (res: { ok?: boolean; message?: MessageDTO; error?: string; reason?: string }) => {
             if (res?.ok && res.message) replaceMessage(chatId, clientId, res.message);
             else {
               markFailed(chatId, clientId);
-              toast.error(ERRORS[res?.error ?? 'server_error'] ?? 'Не удалось отправить');
+              // `reason` carries the server's exact wording (how long the limit lasts).
+              toast.error(res?.reason ?? ERRORS[res?.error ?? 'server_error'] ?? 'Не удалось отправить');
             }
           },
         );

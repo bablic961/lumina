@@ -1,17 +1,18 @@
 import { prisma } from '@/lib/prisma';
 import { HttpError, jsonError, requireAdmin } from '@/lib/guards';
+import { RATE_LIMIT_DEFAULTS, invalidateRateLimitRule, type RateLimitKey } from '@/lib/rateLimit';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
 export const dynamic = 'force-dynamic';
 
-/** Keys the app actually consults, shown even before a row exists. */
-const KNOWN: { key: string; limit: number; windowSec: number; label: string }[] = [
-  { key: 'message.send', limit: 30, windowSec: 10, label: 'Отправка сообщений' },
-  { key: 'integrations.ai', limit: 20, windowSec: 3600, label: 'Запросы к AI' },
-  { key: 'upload', limit: 60, windowSec: 3600, label: 'Загрузка файлов' },
-  { key: 'invite.create', limit: 20, windowSec: 3600, label: 'Создание инвайтов' },
-  { key: 'story.create', limit: 20, windowSec: 86400, label: 'Публикация историй' },
-];
+/**
+ * The catalogue lives with the limiter itself, so a key cannot appear here
+ * without something actually spending it.
+ */
+const KNOWN = (Object.entries(RATE_LIMIT_DEFAULTS) as [RateLimitKey, (typeof RATE_LIMIT_DEFAULTS)[RateLimitKey]][]).map(
+  // `tooMany` is the end-user wording — the panel only needs the title.
+  ([key, spec]) => ({ key, limit: spec.limit, windowSec: spec.windowSec, label: spec.label }),
+);
 
 export async function GET() {
   try {
@@ -53,6 +54,9 @@ export async function PATCH(req: Request) {
       create: { key: known.key, limit, windowSec },
       update: { limit, windowSec },
     });
+    // Counters read the rule through a short cache; drop it so the new budget
+    // takes effect on the very next request.
+    invalidateRateLimitRule(known.key);
     await prisma.auditLog.create({
       data: { actorId: admin.id, action: 'ratelimit.update', target: known.key, meta: JSON.stringify({ limit, windowSec }) },
     });

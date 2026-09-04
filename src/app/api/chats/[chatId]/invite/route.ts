@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { atLeast, HttpError, jsonError, requireMember, requireUser } from '@/lib/guards';
+import { consumeRateLimit } from '@/lib/rateLimit';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,8 @@ export async function POST(req: Request, { params }: { params: { chatId: string 
     const member = await requireMember(params.chatId, me.id);
     if (member.chat.type === 'DM') throw new HttpError(400, 'Для личных чатов ссылок нет');
     if (!atLeast(member.role, 'ADMIN')) throw new HttpError(403, 'Недостаточно прав');
+
+    await consumeRateLimit('invite.create', me.id);
 
     const body = (await req.json().catch(() => ({}))) as { maxUses?: number | null; ttlHours?: number | null };
     const ttl = body.ttlHours ?? null;

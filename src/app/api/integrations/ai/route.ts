@@ -1,34 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { HttpError, jsonError, requireMember, requireUser } from '@/lib/guards';
+import { consumeRateLimit } from '@/lib/rateLimit';
 import { askLumina } from '@/lib/ai';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
 export const dynamic = 'force-dynamic';
-
-const DEFAULT_LIMIT = 20;
-const DEFAULT_WINDOW_SEC = 3600;
-
-/**
- * Per-process throttle: AI calls cost money, so one user cannot loop `/ai`.
- * In-memory on purpose — the limit is per app instance and resets on restart,
- * which is enough for a single-server deployment. Admins tune it through the
- * `integrations.ai` RateLimitRule row.
- */
-const hits = new Map<string, number[]>();
-
-async function takeSlot(userId: string) {
-  const rule = await prisma.rateLimitRule.findUnique({ where: { key: 'integrations.ai' } });
-  const limit = rule?.limit ?? DEFAULT_LIMIT;
-  const windowMs = (rule?.windowSec ?? DEFAULT_WINDOW_SEC) * 1000;
-  const now = Date.now();
-  const recent = (hits.get(userId) ?? []).filter((at) => now - at < windowMs);
-  if (recent.length >= limit) {
-    const retryMin = Math.max(1, Math.ceil((windowMs - (now - recent[0]!)) / 60000));
-    throw new HttpError(429, `Лимит запросов к AI исчерпан, попробуйте через ${retryMin} мин`);
-  }
-  recent.push(now);
-  hits.set(userId, recent);
-}
 
 const PLACEHOLDER: Record<string, string> = {
   VOICE: '[голосовое сообщение]',
@@ -68,7 +44,7 @@ export async function POST(req: Request) {
     if (!prompt) throw new HttpError(400, 'Задайте вопрос: /ai как дела?');
 
     await requireMember(body.chatId, me.id);
-    await takeSlot(me.id);
+    await consumeRateLimit('integrations.ai', me.id);
 
     const text = await askLumina(prompt, await chatContext(body.chatId));
     return Response.json({ text });

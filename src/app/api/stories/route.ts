@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { HttpError, jsonError, requireUser } from '@/lib/guards';
+import { consumeRateLimit } from '@/lib/rateLimit';
 import { emitToUser } from '@/lib/io';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
@@ -87,6 +88,8 @@ export async function POST(req: Request) {
     const body = (await req.json()) as { kind?: string; mediaUrl?: string; caption?: string | null };
     const kind = body.kind === 'VIDEO' ? 'VIDEO' : 'IMAGE';
     if (!body.mediaUrl) throw new HttpError(400, 'Не выбран файл');
+
+    await consumeRateLimit('story.create', me.id);
 
     const active = await prisma.story.count({ where: { userId: me.id, expiresAt: { gt: new Date() } } });
     if (active >= 20) throw new HttpError(400, 'Не больше 20 активных историй');

@@ -1,4 +1,5 @@
 import { jsonError, requireUser } from '@/lib/guards';
+import { consumeRateLimit } from '@/lib/rateLimit';
 import { MAX_UPLOAD_BYTES, saveUpload } from '@/lib/storage';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
@@ -14,7 +15,7 @@ export const maxDuration = 60;
  */
 export async function POST(req: Request) {
   try {
-    await requireUser();
+    const me = await requireUser();
     const form = await req.formData();
     const files = form.getAll('files').filter((f): f is File => f instanceof File);
     const isVoice = form.get('voice') === '1';
@@ -29,6 +30,9 @@ export async function POST(req: Request) {
         { status: 413 },
       );
     }
+
+    // Charged after validation so a rejected request does not eat the budget.
+    await consumeRateLimit('upload', me.id);
 
     const stored = await Promise.all(files.map((file) => saveUpload(file, { voice: isVoice })));
     return Response.json({ files: stored }, { status: 201 });

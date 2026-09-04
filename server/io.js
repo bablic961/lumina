@@ -10,14 +10,12 @@
  */
 const { decode } = require('next-auth/jwt');
 const { sendPushToUser } = require('./push');
+const { checkRateLimit } = require('./rate-limit');
 
 const LIGHT_EMOJI = new Set(['✨', '💡', '🌟', '⚡', '🔥', '🌈']);
-const RATE = { windowMs: 10_000, max: 25 };
 
 /** userId -> Set<socketId> */
 const presence = new Map();
-/** userId -> { count, resetAt } */
-const buckets = new Map();
 
 function parseCookies(header = '') {
   return header.split(';').reduce((acc, part) => {
@@ -40,17 +38,6 @@ async function resolveUserId(socket) {
   } catch {
     return null;
   }
-}
-
-function allowed(userId) {
-  const now = Date.now();
-  const bucket = buckets.get(userId);
-  if (!bucket || bucket.resetAt < now) {
-    buckets.set(userId, { count: 1, resetAt: now + RATE.windowMs });
-    return true;
-  }
-  bucket.count += 1;
-  return bucket.count <= RATE.max;
 }
 
 /** Heuristic "smart notification" score — mentions and questions cut through mute. */
@@ -181,7 +168,10 @@ module.exports = function attachSocketLayer(io, prisma) {
     // ── send ──────────────────────────────────────────────────
     socket.on('message:send', async (payload, ack) => {
       try {
-        if (!allowed(me.id)) return ack?.({ error: 'rate_limited' });
+        // Shared with the HTTP routes, so the admin-configured `message.send`
+        // budget holds no matter which path a client uses.
+        const gate = await checkRateLimit('message.send', me.id, prisma);
+        if (!gate.ok) return ack?.({ error: 'rate_limited', reason: gate.message, retryAfterSec: gate.retryAfterSec });
         const {
           chatId,
           content = '',

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { atLeast, jsonError, requireMember, requireUser } from '@/lib/guards';
+import { consumeRateLimit } from '@/lib/rateLimit';
 import { messageSchema } from '@/lib/validators';
 import { emitToChat } from '@/lib/io';
 import { MESSAGE_INCLUDE, withReactionSummary } from '@/lib/message-dto';
@@ -80,6 +81,8 @@ export async function POST(req: Request, { params }: { params: { chatId: string 
     if (!body.content.trim() && body.attachments.length === 0 && !body.stickerId) {
       return Response.json({ error: 'Пустое сообщение' }, { status: 422 });
     }
+
+    await consumeRateLimit('message.send', me.id);
 
     const ttl = body.selfDestructSec ?? null;
     const message = await prisma.message.create({

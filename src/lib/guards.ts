@@ -7,6 +7,8 @@ export class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Seconds to wait before retrying; surfaces as a Retry-After header. */
+    readonly retryAfterSec?: number,
   ) {
     super(message);
   }
@@ -44,7 +46,8 @@ export function atLeast(role: string, min: MemberRole) {
 
 export function jsonError(err: unknown) {
   if (err instanceof HttpError) {
-    return Response.json({ error: err.message }, { status: err.status });
+    const headers = err.retryAfterSec ? { 'Retry-After': String(err.retryAfterSec) } : undefined;
+    return Response.json({ error: err.message, retryAfterSec: err.retryAfterSec }, { status: err.status, headers });
   }
   console.error('[lumina] route error', err);
   return Response.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 });
