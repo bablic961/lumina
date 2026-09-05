@@ -93,14 +93,29 @@ PORT=3000
 `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`
 (`npx web-push generate-vapid-keys`), `SMTP_*`.
 
-## Переезд на PostgreSQL
+## PostgreSQL и деплой без своего сервера
 
 Схема специально написана без провайдер-специфичных штук: нет нативных enum
 (статусы — `String` + union-типы в `src/types`), нет `Json`-колонок (JSON лежит
-строками), нет `@db.*`. Достаточно поменять `provider` в `prisma/schema.prisma`
-и `DATABASE_URL`, затем `npx prisma migrate dev`. Единственное, что стоит
-добавить вручную — `mode: 'insensitive'` в поиске (`src/app/api/search/route.ts`):
-в SQLite `contains` уже регистронезависим для ASCII, в Postgres нет.
+строками), нет `@db.*`. Переключение провайдера автоматическое: `prisma/provider.js`
+смотрит на `DATABASE_URL` перед каждой сборкой и правит `datasource.provider`
+в `prisma/schema.prisma` — один и тот же файл обслуживает локальный SQLite и
+хостинговый Postgres. Разницу в фильтрах закрывает `src/lib/db-features.ts`:
+`mode: 'insensitive'` обязателен в Postgres (и для кириллицы), но SQLite его не
+принимает, поэтому флаг подмешивается в каждый `contains` поиска и админки.
+
+На хостинге без своего процесса (Vercel и подобные) `server.js` не запускается,
+а значит нет и Socket.io. Реалтайм деградирует, а не отламывается:
+
+| Что | С вебсокетом | Без него |
+| --- | --- | --- |
+| Новые сообщения | push по сокету | `GET /api/chats/:id/messages?after=<id>` раз в 3 с (`useRealtimeFallback`) |
+| Отправка | `message:send` по сокету | `POST /api/chats/:id/messages` |
+| Файлы | диск, `public/uploads` | `STORAGE_DRIVER=blob` → Vercel Blob |
+| Набор текста, presence, звонки | работают | выключены |
+
+Тело запроса на serverless ограничено (порядка 4.5 МБ), поэтому там стоит
+выставить `MAX_UPLOAD_MB=4` — иначе крупный файл упадёт уже на входе.
 
 ## Что реализовано
 
@@ -159,16 +174,12 @@ Crypto (ECDH P-256 + AES-GCM), зашифрованные заметки `/app/n
   UI, но клиент его не заполняет: `tesseract.js` установлен и не подключён.
 - **Отправка писем.** `SMTP_*` читаются, но подтверждение email и сброс пароля
   через письмо не реализованы — регистрация сразу активна.
-- **Загрузка в S3/Vercel Blob.** `STORAGE_DRIVER=blob` описан, рабочий путь —
-  локальный диск (`public/uploads`).
 - **Календарь, Figma, Spotify, GitHub, YouTube, Twitter/X** из списка интеграций:
   ссылки разворачиваются в превью средствами `RichText`, отдельных API-клиентов нет.
 - **Биометрия** (WebAuthn) — не реализована; 2FA закрывает тот же сценарий.
 - **Совместные плейлисты, комнаты ожидания, «сейчас слушаю»** — в схеме нет
   соответствующих моделей.
 - **Push без VAPID-ключей** не уходит: `server/push.js` тихо выключается.
-- **Rate limits** реально применяются только к `integrations.ai`; остальные
-  четыре ключа настраиваются в админке, но счётчик по ним пока не списывается.
 - **`Attachment.blurhash`** есть в схеме и DTO, но не вычисляется при загрузке.
 - **`CallSession.recordingUrl`** не заполняется — запись остаётся на устройстве.
 
@@ -176,7 +187,7 @@ Crypto (ECDH P-256 + AES-GCM), зашифрованные заметки `/app/n
 
 | В спеке | В проекте | Почему |
 | --- | --- | --- |
-| PostgreSQL | SQLite (провайдер меняется одной строкой) | запуск без инфраструктуры; схема портируема |
+| PostgreSQL | SQLite локально, Postgres на хостинге — провайдер переключается сам | запуск без инфраструктуры; схема портируема |
 | `next@14.2.3`, `zod@3.22.4` и др. версии из списка | подняты до `next@14.2.35`, `zod@3.25.76`, `next-auth@4.24.15`, `socket.io@4.8.3`, `sharp@0.35.4`, `axios@1.20.0`, `nodemailer@7.0.10`, `tsx@4.23.13` | закрытые CVE в исходных версиях |
 | `multer` | нативный разбор `FormData` в route handler | в App Router middleware-парсер не нужен |
 | `simple-peer` | свой хук `useWebRTC` на `RTCPeerConnection` | `simple-peer` тянет полифилы Node и давно без релизов |
@@ -184,7 +195,7 @@ Crypto (ECDH P-256 + AES-GCM), зашифрованные заметки `/app/n
 | MediaPipe для виртуального фона | размытие на Canvas2D | MediaPipe — это +20 МБ WASM ради демо-функции |
 | SWR | `@tanstack/react-query` | нужны `useInfiniteQuery` и инвалидация по ключам |
 | Отдельный WS-сервер | Socket.io внутри `server.js` | один порт, одна сессия, один PrismaClient |
-| Redis для rate limit | таблица `RateLimitRule` + счётчики в памяти | без внешнего сервиса; лимиты правятся из админки |
+| Redis для rate limit | таблица `RateLimitRule` + счётчики в памяти | без внешнего сервиса; лимиты правятся из админки (на serverless у каждого инстанса счётчик свой) |
 
 Ещё несколько мест, где реализация отличается сознательно:
 
