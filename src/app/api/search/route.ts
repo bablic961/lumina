@@ -1,13 +1,14 @@
 import { prisma } from '@/lib/prisma';
 import { jsonError, requireUser } from '@/lib/guards';
+import { INSENSITIVE } from '@/lib/db-features';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
 export const dynamic = 'force-dynamic';
 
 /**
  * Global search across chats, messages and people.
- * `contains` on SQLite is case-insensitive for ASCII; on PostgreSQL add
- * `mode: 'insensitive'` (kept out here so the same code runs on both).
+ * INSENSITIVE carries the one filter flag the two databases disagree on, so the
+ * same query text runs on SQLite and PostgreSQL alike.
  */
 export async function GET(req: Request) {
   try {
@@ -30,7 +31,7 @@ export async function GET(req: Request) {
         where: {
           chatId: chatId ? chatId : { in: myChatIds },
           deletedForAll: false,
-          ...(q ? { content: { contains: q } } : {}),
+          ...(q ? { content: { contains: q, ...INSENSITIVE } } : {}),
           ...(from ? { senderId: from } : {}),
           ...(kind && kind !== 'ALL' ? { contentType: kind } : {}),
           ...(since ? { createdAt: { gte: new Date(since) } } : {}),
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
             where: {
               banned: false,
               id: { not: me.id },
-              OR: [{ username: { contains: q.replace(/^@/, '') } }, { name: { contains: q } }],
+              OR: [{ username: { contains: q.replace(/^@/, ''), ...INSENSITIVE } }, { name: { contains: q, ...INSENSITIVE } }],
             },
             take: 12,
             select: { id: true, name: true, username: true, avatarUrl: true, verified: true, presence: true },
@@ -57,7 +58,7 @@ export async function GET(req: Request) {
         ? prisma.chat.findMany({
             where: {
               id: { in: myChatIds },
-              OR: [{ title: { contains: q } }, { description: { contains: q } }],
+              OR: [{ title: { contains: q, ...INSENSITIVE } }, { description: { contains: q, ...INSENSITIVE } }],
             },
             take: 12,
             select: { id: true, title: true, type: true, avatarUrl: true },

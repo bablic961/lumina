@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { HttpError, jsonError, requireAdmin } from '@/lib/guards';
+import { INSENSITIVE } from '@/lib/db-features';
 import { emitToUser } from '@/lib/io';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
@@ -20,9 +21,9 @@ export async function GET(req: Request) {
       ...(q
         ? {
             OR: [
-              { name: { contains: q } },
-              { username: { contains: q } },
-              { email: { contains: q } },
+              { name: { contains: q, ...INSENSITIVE } },
+              { username: { contains: q, ...INSENSITIVE } },
+              { email: { contains: q, ...INSENSITIVE } },
             ],
           }
         : {}),

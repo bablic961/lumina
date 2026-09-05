@@ -9,6 +9,7 @@ import { useUi } from '@/store/ui';
 import { useChatStore } from '@/store/chat';
 import { useSocketContext } from '@/components/providers/SocketProvider';
 import { useMessages } from '@/hooks/useMessages';
+import { useRealtimeFallback } from '@/hooks/useRealtimeFallback';
 import { useMe } from '@/components/providers/MeProvider';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { PinnedBar } from '@/components/chat/PinnedBar';
@@ -25,6 +26,8 @@ export function ChatView({ chatId }: { chatId: string }) {
   // `?message=<id>` deep links (search, saved, notifications) open that window.
   const target = useSearchParams().get('message');
   const { messages, hasMore, loading, loadingMore, loadOlder } = useMessages(chatId, target);
+  // Polls for new messages whenever the websocket is unavailable.
+  useRealtimeFallback(chatId);
 
   const detail = useQuery({
     queryKey: ['chat', chatId],

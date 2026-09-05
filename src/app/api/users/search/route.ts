@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { jsonError, requireUser } from '@/lib/guards';
+import { INSENSITIVE } from '@/lib/db-features';
 
 // Reads the session cookie on every request, so there is nothing to prerender.
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
       where: {
         banned: false,
         id: { notIn: [...hidden] },
-        OR: [{ username: { contains: q } }, { name: { contains: q } }],
+        OR: [{ username: { contains: q, ...INSENSITIVE } }, { name: { contains: q, ...INSENSITIVE } }],
       },
       orderBy: { name: 'asc' },
       take: 20,

@@ -1,0 +1,19 @@
+# Never upload local secrets or the development database.
+.env
+.env*.local
+*.db
+*.db-shm
+*.db-wal
+prisma/dev.db*
+
+# Build output and dependencies are produced on the builder.
+node_modules
+.next
+out
+build
+
+# Local artefacts.
+public/uploads/*
+!public/uploads/.gitkeep
+*.log
+.vercel

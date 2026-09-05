@@ -36,7 +36,7 @@ const ERRORS: Record<string, string> = {
 
 /** Optimistic send: the bubble appears instantly, the ack confirms or marks it failed. */
 export function useSend(chatId: string | null, me: PublicUser | null) {
-  const { socket } = useSocketContext();
+  const { socket, connected } = useSocketContext();
   const { upsertMessage, replaceMessage, markFailed, replyTo, setReplyTo, forwarding, setForwarding, chats } =
     useChatStore();
   const typingSentAt = useRef(0);
@@ -58,7 +58,7 @@ export function useSend(chatId: string | null, me: PublicUser | null) {
 
   const send = useCallback(
     async (input: SendInput) => {
-      if (!chatId || !socket || !me) return;
+      if (!chatId || !me) return;
       const chat = chats.find((c) => c.id === chatId);
       const clientId = `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const contentType = input.contentType ?? (input.voice ? 'VOICE' : input.files?.length ? 'FILE' : 'TEXT');
@@ -123,41 +123,50 @@ export function useSend(chatId: string | null, me: PublicUser | null) {
           if (peerKey) content = await encryptFor(peerKey, content);
         }
 
-        socket.emit(
-          'message:send',
-          {
-            chatId,
-            content,
-            contentType,
-            codeLanguage: input.codeLanguage,
-            replyToId: optimistic.replyToId,
-            forwardedFromId: optimistic.forwardedFromId,
-            stickerId: input.stickerId,
-            attachments: attachments.map((a) => ({
-              ...a,
-              waveform: a.waveform ? JSON.parse(a.waveform as string) : null,
-            })),
-            selfDestructSec: input.selfDestructSec,
-            lat: input.lat,
-            lng: input.lng,
-            locationName: input.locationName,
-            clientId,
-          },
-          (res: { ok?: boolean; message?: MessageDTO; error?: string; reason?: string }) => {
-            if (res?.ok && res.message) replaceMessage(chatId, clientId, res.message);
-            else {
-              markFailed(chatId, clientId);
-              // `reason` carries the server's exact wording (how long the limit lasts).
-              toast.error(res?.reason ?? ERRORS[res?.error ?? 'server_error'] ?? 'Не удалось отправить');
-            }
-          },
-        );
+        const payload = {
+          chatId,
+          content,
+          contentType,
+          codeLanguage: input.codeLanguage,
+          replyToId: optimistic.replyToId,
+          forwardedFromId: optimistic.forwardedFromId,
+          stickerId: input.stickerId,
+          attachments: attachments.map((a) => ({
+            ...a,
+            waveform: a.waveform ? JSON.parse(a.waveform as string) : null,
+          })),
+          selfDestructSec: input.selfDestructSec,
+          lat: input.lat,
+          lng: input.lng,
+          locationName: input.locationName,
+        };
+
+        if (socket && connected) {
+          socket.emit(
+            'message:send',
+            { ...payload, clientId },
+            (res: { ok?: boolean; message?: MessageDTO; error?: string; reason?: string }) => {
+              if (res?.ok && res.message) replaceMessage(chatId, clientId, res.message);
+              else {
+                markFailed(chatId, clientId);
+                // `reason` carries the server's exact wording (how long the limit lasts).
+                toast.error(res?.reason ?? ERRORS[res?.error ?? 'server_error'] ?? 'Не удалось отправить');
+              }
+            },
+          );
+          return;
+        }
+
+        // No websocket (serverless host, proxy stripping upgrades): the HTTP
+        // route writes the same message and still notifies whoever is connected.
+        const { message } = await api.post<{ message: MessageDTO }>(`/api/chats/${chatId}/messages`, payload);
+        replaceMessage(chatId, clientId, message);
       } catch (err) {
         markFailed(chatId, clientId);
         toast.error(err instanceof Error ? err.message : 'Не удалось отправить');
       }
     },
-    [chatId, socket, me, chats, replyTo, forwarding, upsertMessage, setReplyTo, setForwarding, uploadFiles, replaceMessage, markFailed],
+    [chatId, socket, connected, me, chats, replyTo, forwarding, upsertMessage, setReplyTo, setForwarding, uploadFiles, replaceMessage, markFailed],
   );
 
   const emitTyping = useCallback(

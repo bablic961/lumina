@@ -19,6 +19,21 @@ export async function GET(req: Request, { params }: { params: { chatId: string }
     const url = new URL(req.url);
     const cursor = url.searchParams.get('cursor');
     const around = url.searchParams.get('around');
+    const afterId = url.searchParams.get('after');
+
+    // Polling fallback: whatever arrived after the newest message a client holds.
+    // Used when the websocket cannot connect (serverless hosting, strict proxy).
+    if (afterId) {
+      const anchor = await prisma.message.findUnique({ where: { id: afterId }, select: { createdAt: true } });
+      if (!anchor) return Response.json({ error: 'Сообщение не найдено' }, { status: 404 });
+      const fresh = await prisma.message.findMany({
+        where: { chatId: params.chatId, createdAt: { gt: anchor.createdAt } },
+        orderBy: { createdAt: 'asc' },
+        take: PAGE_SIZE,
+        include: MESSAGE_INCLUDE,
+      });
+      return Response.json({ messages: fresh.map(withReactionSummary), hasMore: fresh.length === PAGE_SIZE });
+    }
 
     if (around) {
       const anchor = await prisma.message.findUnique({ where: { id: around } });

@@ -19,3 +19,7 @@ next-env.d.ts
 
 # Local logs
 *.log
+
+.vercel
+.env*
+!.env.example

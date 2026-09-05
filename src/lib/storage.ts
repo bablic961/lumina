@@ -9,6 +9,12 @@ const UPLOAD_ROOT = path.join(process.cwd(), 'public', 'uploads');
 
 export const MAX_UPLOAD_BYTES = MAX_MB * 1024 * 1024;
 
+/**
+ * `blob` is for hosts with a read-only filesystem (Vercel); `local` writes into
+ * public/uploads and is the default for development and for any box with a disk.
+ */
+const DRIVER: 'local' | 'blob' = process.env.STORAGE_DRIVER === 'blob' ? 'blob' : 'local';
+
 export function kindFromMime(mime: string): AttachmentKind {
   if (mime.startsWith('image/')) return 'IMAGE';
   if (mime.startsWith('video/')) return 'VIDEO';
@@ -35,25 +41,46 @@ export interface StoredFile {
 }
 
 /**
- * Persists an upload under public/uploads/<yyyy>/<mm>/.
- * Images are re-encoded (metadata stripped, max edge 2560) and get a 480px
- * thumbnail; everything else is stored byte-for-byte.
- *
- * STORAGE_DRIVER exists so this is the single place to swap in S3 / Vercel Blob:
- * only this function needs to change.
+ * Stores one object under `key` (a `<yyyy>/<mm>/<uuid>.<ext>` fragment) and
+ * returns the URL to serve it from — site-relative for local disk, absolute for
+ * blob storage. Both drivers keep the same key layout, so a database row does
+ * not care which one wrote it.
+ */
+async function put(key: string, data: Buffer, mime: string): Promise<string> {
+  if (DRIVER === 'blob') {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      throw new Error('STORAGE_DRIVER=blob, но BLOB_READ_WRITE_TOKEN не задан');
+    }
+    // Imported on demand so a local install never has to resolve the package.
+    const { put: blobPut } = await import('@vercel/blob');
+    const { url } = await blobPut(key, data, {
+      access: 'public',
+      contentType: mime,
+      addRandomSuffix: false,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    return url;
+  }
+
+  const target = path.join(UPLOAD_ROOT, key);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, data);
+  return `/uploads/${key}`;
+}
+
+/**
+ * Persists an upload. Images are re-encoded (metadata stripped, max edge 2560)
+ * and get a 480px thumbnail; everything else is stored byte-for-byte.
  */
 export async function saveUpload(file: File, opts: { voice?: boolean } = {}): Promise<StoredFile> {
   if (file.size > MAX_UPLOAD_BYTES) throw new Error(`Файл больше ${MAX_MB} МБ`);
 
   const now = new Date();
-  const dir = path.join(UPLOAD_ROOT, String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'));
-  await mkdir(dir, { recursive: true });
-
+  const folder = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
   const mime = file.type || 'application/octet-stream';
   const kind: AttachmentKind = opts.voice ? 'VOICE' : kindFromMime(mime);
   const id = randomUUID();
   const buffer = Buffer.from(await file.arrayBuffer());
-  const publicBase = `/uploads/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   if (kind === 'IMAGE' && !mime.includes('svg') && !mime.includes('gif')) {
     const image = sharp(buffer, { failOn: 'none' }).rotate();
@@ -68,11 +95,13 @@ export async function saveUpload(file: File, opts: { voice?: boolean } = {}): Pr
       .webp({ quality: 72 })
       .toBuffer();
 
-    await writeFile(path.join(dir, `${id}.webp`), main);
-    await writeFile(path.join(dir, `${id}_thumb.webp`), thumb);
+    const [url, thumbUrl] = await Promise.all([
+      put(`${folder}/${id}.webp`, main, 'image/webp'),
+      put(`${folder}/${id}_thumb.webp`, thumb, 'image/webp'),
+    ]);
     return {
-      url: `${publicBase}/${id}.webp`,
-      thumbUrl: `${publicBase}/${id}_thumb.webp`,
+      url,
+      thumbUrl,
       name: file.name || 'image.webp',
       mime: 'image/webp',
       size: main.byteLength,
@@ -83,9 +112,8 @@ export async function saveUpload(file: File, opts: { voice?: boolean } = {}): Pr
   }
 
   const ext = safeExtension(file.name || '', mime);
-  await writeFile(path.join(dir, `${id}${ext}`), buffer);
   return {
-    url: `${publicBase}/${id}${ext}`,
+    url: await put(`${folder}/${id}${ext}`, buffer, mime),
     thumbUrl: null,
     name: file.name || `file${ext}`,
     mime,
