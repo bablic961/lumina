@@ -18,6 +18,7 @@ import {
 import { api } from '@/lib/api';
 import { cn, debounce, tryCalculate } from '@/lib/utils';
 import { useChatStore } from '@/store/chat';
+import { warmOcr } from '@/lib/ocr';
 import { toast } from '@/store/toast';
 import { useMe } from '@/components/providers/MeProvider';
 import { useSocketContext } from '@/components/providers/SocketProvider';
@@ -262,6 +263,9 @@ export function Composer({
     const list = Array.from(incoming).slice(0, 10 - files.length);
     if (list.length === 0) return;
     setFiles((prev) => [...prev, ...list]);
+    // Starts the Tesseract download now, while the user is still typing, so
+    // recognition is usually ready by the time they press send.
+    warmOcr(list);
   }
 
   async function shareLocation() {

@@ -3,6 +3,7 @@
 import { useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
 import { encryptFor } from '@/lib/e2e';
+import { recognizeImageText } from '@/lib/ocr';
 import { useChatStore } from '@/store/chat';
 import { toast } from '@/store/toast';
 import { useSocketContext } from '@/components/providers/SocketProvider';
@@ -46,13 +47,18 @@ export function useSend(chatId: string | null, me: PublicUser | null) {
     files.forEach((f) => form.append('files', f));
     // The route answers with StoredFile rows under `files`; real ids appear only
     // when the message — and with it the Attachment row — is written.
-    const { files: stored } = await api.post<{ files: UploadedFile[] }>('/api/upload', form);
+    // Recognition runs alongside the upload, so it costs no extra wall-clock;
+    // anything that misses its budget comes back null and the send goes on.
+    const [{ files: stored }, recognised] = await Promise.all([
+      api.post<{ files: UploadedFile[] }>('/api/upload', form),
+      Promise.all(files.map((file) => recognizeImageText(file))),
+    ]);
     return stored.map((file, index) => ({
       ...file,
       id: `up_${Date.now()}_${index}`,
       duration: null,
       waveform: null,
-      ocrText: null,
+      ocrText: recognised[index] ?? null,
     }));
   }, []);
 
